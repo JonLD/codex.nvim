@@ -51,23 +51,49 @@ local function open_terminal(cmd, env_table, effective_config, focus)
   end
 
   local original_win = vim.api.nvim_get_current_win()
-  local width = math.floor(vim.o.columns * effective_config.split_width_percentage)
-  local full_height = vim.o.lines
-  local placement_modifier
+  local win_config = effective_config.window or {}
+  local is_float = win_config.position == "float"
 
-  if effective_config.split_side == "left" then
-    placement_modifier = "topleft "
+  local new_winid
+  if is_float then
+    local width = math.floor(vim.o.columns * (win_config.width or 0.8))
+    local height = math.floor(vim.o.lines * (win_config.height or 0.8))
+    local row = math.floor((vim.o.lines - height) / 2)
+    local col = math.floor((vim.o.columns - width) / 2)
+    local border = win_config.border or "single"
+    local buf = vim.api.nvim_create_buf(false, false)
+    new_winid = vim.api.nvim_open_win(buf, true, {
+      relative = "editor",
+      width = width,
+      height = height,
+      row = row,
+      col = col,
+      style = "minimal",
+      border = border,
+    })
   else
-    placement_modifier = "botright "
+    local split_side = effective_config.split_side
+    if win_config.position == "left" or win_config.position == "right" then
+      split_side = win_config.position
+    end
+    local width = math.floor(vim.o.columns * effective_config.split_width_percentage)
+    local full_height = vim.o.lines
+    local placement_modifier
+
+    if split_side == "left" then
+      placement_modifier = "topleft "
+    else
+      placement_modifier = "botright "
+    end
+
+    vim.cmd(placement_modifier .. width .. "vsplit")
+    new_winid = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_height(new_winid, full_height)
+
+    vim.api.nvim_win_call(new_winid, function()
+      vim.cmd("enew")
+    end)
   end
-
-  vim.cmd(placement_modifier .. width .. "vsplit")
-  local new_winid = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_height(new_winid, full_height)
-
-  vim.api.nvim_win_call(new_winid, function()
-    vim.cmd("enew")
-  end)
 
   local term_cmd_arg
   if type(cmd) == "table" then
@@ -108,7 +134,9 @@ local function open_terminal(cmd, env_table, effective_config, focus)
 
   if not jobid or jobid == 0 then
     vim.notify("Failed to open native terminal.", vim.log.levels.ERROR)
-    vim.api.nvim_win_close(new_winid, true)
+    if new_winid and vim.api.nvim_win_is_valid(new_winid) then
+      vim.api.nvim_win_close(new_winid, true)
+    end
     vim.api.nvim_set_current_win(original_win)
     cleanup_state()
     return false

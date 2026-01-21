@@ -58,17 +58,41 @@ end
 ---@return table
 local function build_opts(config, env_table, focus)
   focus = utils.normalize_focus(focus)
+
+  local win_opts
+  if config.window and config.window.position == "float" then
+    local width = math.floor(vim.o.columns * (config.window.width or 0.8))
+    local height = math.floor(vim.o.lines * (config.window.height or 0.8))
+    local row = math.floor((vim.o.lines - height) / 2)
+    local col = math.floor((vim.o.columns - width) / 2)
+    win_opts = {
+      relative = "editor",
+      width = width,
+      height = height,
+      row = row,
+      col = col,
+      style = "minimal",
+      border = config.window.border or "single",
+    }
+  else
+    local position = config.split_side
+    if config.window and (config.window.position == "left" or config.window.position == "right") then
+      position = config.window.position
+    end
+    win_opts = {
+      position = position,
+      width = config.split_width_percentage,
+      height = 0,
+      relative = "editor",
+    }
+  end
+
   return {
     env = env_table,
     start_insert = focus,
     auto_insert = focus,
     auto_close = false,
-    win = vim.tbl_deep_extend("force", {
-      position = config.split_side,
-      width = config.split_width_percentage,
-      height = 0,
-      relative = "editor",
-    }, config.snacks_win_opts or {}),
+    win = vim.tbl_deep_extend("force", win_opts, config.snacks_win_opts or {}),
   }
 end
 

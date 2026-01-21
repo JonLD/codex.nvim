@@ -2,7 +2,6 @@ local vim = vim
 local installer = require 'codex.installer'
 local state = require 'codex.state'
 local terminal = require 'codex.terminal'
-local term_utils = require 'codex.terminal.utils'
 
 local M = {}
 
@@ -21,7 +20,6 @@ local config = {
   shell = nil,
   model = nil, -- Default to the latest model
   autoinstall = true,
-  use_buffer = false,  -- if true, capture Codex stdout into a normal buffer instead of a terminal
   env = {},
   terminal = {
     provider = "auto",
@@ -39,6 +37,7 @@ function M.setup(user_config)
   if config.shell ~= nil then
     term_config.shell = config.shell
   end
+  term_config.window = config.window
   terminal.setup(term_config, config.cmd, config.env)
 
   vim.api.nvim_create_user_command('Codex', function(opts)
@@ -146,7 +145,6 @@ local function open_panel(side)
 end
 
 function M.open(cmd_args)
-  local user_cmd_args = cmd_args
   local function create_clean_buf()
     local buf = vim.api.nvim_create_buf(false, false)
 
@@ -218,81 +216,12 @@ function M.open(cmd_args)
     end
   end
 
-  local function is_buf_reusable(buf)
-    return type(buf) == 'number' and vim.api.nvim_buf_is_valid(buf)
-  end
-
-  if config.use_buffer then
-    if not is_buf_reusable(state.buf) then
-      state.buf = create_clean_buf()
-    end
-
-    if config.window.position == "left" or config.window.position == "right" then
-      open_panel(config.window.position)
-    else
-      open_window()
-    end
-  else
-    terminal.open({}, cmd_args)
-    return
-  end
-
-  if not state.job then
-    -- assemble command
-    local cmd_args = type(config.cmd) == 'string' and term_utils.parse_args(config.cmd) or vim.deepcopy(config.cmd)
-    if config.model then
-      table.insert(cmd_args, '-m')
-      table.insert(cmd_args, config.model)
-    end
-    if user_cmd_args and user_cmd_args ~= '' then
-      cmd_args = term_utils.append_cmd_args(cmd_args, user_cmd_args)
-    end
-
-    if config.use_buffer then
-      -- capture stdout/stderr into normal buffer
-      state.job = vim.fn.jobstart(cmd_args, {
-        cwd = vim.loop.cwd(),
-        stdout_buffered = true,
-        on_stdout = function(_, data)
-          if not data then return end
-          for _, line in ipairs(data) do
-            if line ~= '' then
-              vim.api.nvim_buf_set_lines(state.buf, -1, -1, false, { line })
-            end
-          end
-        end,
-        on_stderr = function(_, data)
-          if not data then return end
-          for _, line in ipairs(data) do
-            if line ~= '' then
-              vim.api.nvim_buf_set_lines(state.buf, -1, -1, false, { '[ERR] ' .. line })
-            end
-          end
-        end,
-        on_exit = function(_, code)
-          state.job = nil
-          vim.api.nvim_buf_set_lines(state.buf, -1, -1, false, {
-            ('[Codex exit: %d]'):format(code),
-          })
-        end,
-      })
-    else
-      -- use a terminal buffer
-      state.job = vim.fn.termopen(cmd_args, {
-        cwd = vim.loop.cwd(),
-        on_exit = function()
-          state.job = nil
-        end,
-      })
-    end
-  end
+  terminal.open({}, cmd_args)
 end
 
 function M.close()
-  if config.use_buffer then
-    if state.win and vim.api.nvim_win_is_valid(state.win) then
-      vim.api.nvim_win_close(state.win, true)
-    end
+  if state.win and vim.api.nvim_win_is_valid(state.win) then
+    vim.api.nvim_win_close(state.win, true)
     state.win = nil
     return
   end
@@ -300,24 +229,14 @@ function M.close()
 end
 
 function M.toggle(cmd_args)
-  if config.use_buffer then
-    if state.win and vim.api.nvim_win_is_valid(state.win) then
-      M.close()
-    else
-      M.open(cmd_args)
-    end
+  if state.win and vim.api.nvim_win_is_valid(state.win) then
+    M.close()
     return
   end
   terminal.simple_toggle({}, cmd_args)
 end
 
 function M.statusline()
-  if config.use_buffer then
-    if state.job and not (state.win and vim.api.nvim_win_is_valid(state.win)) then
-      return '[Codex]'
-    end
-    return ''
-  end
   local bufnr = terminal.get_active_terminal_bufnr()
   if not bufnr then
     return ''
