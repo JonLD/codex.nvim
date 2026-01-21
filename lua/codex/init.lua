@@ -1,6 +1,7 @@
 local vim = vim
 local installer = require 'codex.installer'
 local state = require 'codex.state'
+local terminal = require 'codex.terminal'
 
 local M = {}
 
@@ -17,21 +18,28 @@ local config = {
   autoinstall = true,
   panel     = false,   -- if true, open Codex in a side-panel instead of floating window
   use_buffer = false,  -- if true, capture Codex stdout into a normal buffer instead of a terminal
+  env = {},
+  terminal = {
+    provider = "auto",
+    split_side = "right",
+    split_width_percentage = 0.30,
+    show_native_term_exit_tip = true,
+    auto_close = false,
+    snacks_win_opts = {},
+  },
 }
 
 function M.setup(user_config)
   config = vim.tbl_deep_extend('force', config, user_config or {})
+  terminal.setup(config.terminal, config.cmd, config.env)
 
-  vim.api.nvim_create_user_command('Codex', function()
-    M.toggle()
-  end, { desc = 'Toggle Codex popup' })
-
-  vim.api.nvim_create_user_command('CodexToggle', function()
-    M.toggle()
-  end, { desc = 'Toggle Codex popup (alias)' })
+  vim.api.nvim_create_user_command('Codex', function(opts)
+    local cmd_args = opts.args and opts.args ~= '' and opts.args or nil
+    M.toggle(cmd_args)
+  end, { desc = 'Toggle Codex popup', nargs = '*' })
 
   if config.keymaps.toggle then
-    vim.api.nvim_set_keymap('n', config.keymaps.toggle, '<cmd>CodexToggle<CR>', { noremap = true, silent = true })
+    vim.api.nvim_set_keymap('n', config.keymaps.toggle, '<cmd>Codex<CR>', { noremap = true, silent = true })
   end
 end
 
@@ -100,7 +108,7 @@ local function open_panel()
   state.win = win
 end
 
-function M.open()
+function M.open(cmd_args)
   local function create_clean_buf()
     local buf = vim.api.nvim_create_buf(false, false)
 
@@ -168,11 +176,16 @@ function M.open()
     return type(buf) == 'number' and vim.api.nvim_buf_is_valid(buf)
   end
 
-  if not is_buf_reusable(state.buf) then
-    state.buf = create_clean_buf()
-  end
+  if config.use_buffer then
+    if not is_buf_reusable(state.buf) then
+      state.buf = create_clean_buf()
+    end
 
-  if config.panel then open_panel() else open_window() end
+    if config.panel then open_panel() else open_window() end
+  else
+    terminal.open({}, cmd_args)
+    return
+  end
 
   if not state.job then
     -- assemble command
@@ -180,6 +193,14 @@ function M.open()
     if config.model then
       table.insert(cmd_args, '-m')
       table.insert(cmd_args, config.model)
+    end
+    if cmd_args and cmd_args ~= '' then
+      local extra_args = vim.split(cmd_args, '%s+')
+      for _, arg in ipairs(extra_args) do
+        if arg ~= '' then
+          table.insert(cmd_args, arg)
+        end
+      end
     end
 
     if config.use_buffer then
@@ -223,25 +244,45 @@ function M.open()
 end
 
 function M.close()
-  if state.win and vim.api.nvim_win_is_valid(state.win) then
-    vim.api.nvim_win_close(state.win, true)
+  if config.use_buffer then
+    if state.win and vim.api.nvim_win_is_valid(state.win) then
+      vim.api.nvim_win_close(state.win, true)
+    end
+    state.win = nil
+    return
   end
-  state.win = nil
+  terminal.close()
 end
 
-function M.toggle()
-  if state.win and vim.api.nvim_win_is_valid(state.win) then
-    M.close()
-  else
-    M.open()
+function M.toggle(cmd_args)
+  if config.use_buffer then
+    if state.win and vim.api.nvim_win_is_valid(state.win) then
+      M.close()
+    else
+      M.open(cmd_args)
+    end
+    return
   end
+  terminal.simple_toggle({}, cmd_args)
 end
 
 function M.statusline()
-  if state.job and not (state.win and vim.api.nvim_win_is_valid(state.win)) then
-    return '[Codex]'
+  if config.use_buffer then
+    if state.job and not (state.win and vim.api.nvim_win_is_valid(state.win)) then
+      return '[Codex]'
+    end
+    return ''
   end
-  return ''
+  local bufnr = terminal.get_active_terminal_bufnr()
+  if not bufnr then
+    return ''
+  end
+  local bufinfo = vim.fn.getbufinfo(bufnr)
+  local is_visible = bufinfo and #bufinfo > 0 and #bufinfo[1].windows > 0
+  if is_visible then
+    return ''
+  end
+  return '[Codex]'
 end
 
 function M.status()
