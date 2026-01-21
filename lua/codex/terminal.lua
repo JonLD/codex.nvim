@@ -202,6 +202,19 @@ local function get_codex_command_and_env(cmd_args)
   return cmd, env_table
 end
 
+---@param bufnr number|nil
+---@return number|nil
+local function get_terminal_job_id(bufnr)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return nil
+  end
+  local ok, job_id = pcall(vim.api.nvim_buf_get_var, bufnr, "terminal_job_id")
+  if ok and type(job_id) == "number" then
+    return job_id
+  end
+  return nil
+end
+
 ---@param opts_override table|nil
 ---@param cmd_args string|nil
 ---@return boolean
@@ -330,6 +343,37 @@ end
 ---@return number|nil
 function M.get_active_terminal_bufnr()
   return get_provider().get_active_bufnr()
+end
+
+---@param text string
+---@param opts? {retries?: number, delay_ms?: number}
+---@return boolean
+function M.send_input(text, opts)
+  local retries = (opts and opts.retries) or 15
+  local delay_ms = (opts and opts.delay_ms) or 30
+  local provider = get_provider()
+  local bufnr = provider.get_active_bufnr()
+
+  if not bufnr then
+    M.open()
+    bufnr = provider.get_active_bufnr()
+  end
+
+  local job_id = get_terminal_job_id(bufnr)
+  if job_id then
+    vim.api.nvim_chan_send(job_id, text .. "\n")
+    return true
+  end
+
+  if retries <= 0 then
+    vim.notify("Codex terminal is not ready to receive input.", vim.log.levels.WARN)
+    return false
+  end
+
+  vim.defer_fn(function()
+    M.send_input(text, { retries = retries - 1, delay_ms = delay_ms })
+  end, delay_ms)
+  return true
 end
 
 ---@return table|nil

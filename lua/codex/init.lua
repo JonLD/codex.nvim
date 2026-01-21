@@ -38,6 +38,35 @@ function M.setup(user_config)
     M.toggle(cmd_args)
   end, { desc = 'Toggle Codex popup', nargs = '*' })
 
+  vim.api.nvim_create_user_command('CodexSendSelected', function(opts)
+    local buf = vim.api.nvim_get_current_buf()
+    local file_path = vim.api.nvim_buf_get_name(buf)
+    if file_path == '' then
+      vim.notify('[codex.nvim] No file path for current buffer.', vim.log.levels.WARN)
+      return
+    end
+
+    local line1 = opts.line1
+    local line2 = opts.line2
+    if not opts.range or opts.range == 0 then
+      local cur = vim.api.nvim_win_get_cursor(0)[1]
+      line1 = cur
+      line2 = cur
+    end
+
+    if line1 > line2 then
+      line1, line2 = line2, line1
+    end
+
+    local rel_path = vim.fn.fnamemodify(file_path, ':.')
+    if rel_path == '' then
+      rel_path = file_path
+    end
+
+    local ref = string.format('@%s:%d-%d', rel_path, line1, line2)
+    terminal.send_input(ref)
+  end, { desc = 'Send selected lines to Codex via @file:line-line', range = true })
+
   if config.keymaps.toggle then
     vim.api.nvim_set_keymap('n', config.keymaps.toggle, '<cmd>Codex<CR>', { noremap = true, silent = true })
   end
