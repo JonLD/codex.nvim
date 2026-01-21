@@ -12,7 +12,7 @@ local defaults = {
   show_native_term_exit_tip = true,
   terminal_cmd = nil,
   shell = nil,
-  auto_close = false,
+  auto_close = true,
   env = {},
   snacks_win_opts = {},
 }

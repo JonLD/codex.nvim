@@ -16,17 +16,35 @@ end
 ---@param config table
 local function setup_terminal_events(term_instance, config)
   if config.auto_close then
-    term_instance:on("TermClose", function()
-      if vim.v.event.status ~= 0 then
-        vim.notify("Codex exited with code " .. vim.v.event.status .. ".", vim.log.levels.ERROR)
+    local closed = false
+    local function close_terminal(status)
+      if closed then
+        return
       end
-
+      closed = true
+      if status ~= nil and status ~= 0 then
+        vim.notify("Codex exited with code " .. status .. ".", vim.log.levels.ERROR)
+      end
       terminal = nil
       vim.schedule(function()
         term_instance:close({ buf = true })
         vim.cmd.checktime()
       end)
+    end
+
+    term_instance:on("TermClose", function()
+      close_terminal(vim.v.event.status)
     end, { buf = true })
+
+    if term_instance.buf then
+      vim.api.nvim_create_autocmd("TermClose", {
+        buffer = term_instance.buf,
+        once = true,
+        callback = function()
+          close_terminal(vim.v.event.status)
+        end,
+      })
+    end
   end
 
   term_instance:on("BufWipeout", function()

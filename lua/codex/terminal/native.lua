@@ -118,6 +118,19 @@ local function open_terminal(cmd, env_table, effective_config, focus)
   bufnr = vim.api.nvim_get_current_buf()
   vim.bo[bufnr].bufhidden = "hide"
 
+  if effective_config.auto_close then
+    vim.api.nvim_create_autocmd("TermClose", {
+      buffer = bufnr,
+      once = true,
+      callback = function()
+        if winid and vim.api.nvim_win_is_valid(winid) then
+          vim.api.nvim_win_close(winid, true)
+        end
+        cleanup_state()
+      end,
+    })
+  end
+
   if focus then
     vim.api.nvim_set_current_win(winid)
     vim.cmd("startinsert")
