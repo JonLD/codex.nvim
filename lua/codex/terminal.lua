@@ -11,6 +11,7 @@ local defaults = {
   provider = "auto",
   show_native_term_exit_tip = true,
   terminal_cmd = nil,
+  shell = nil,
   auto_close = false,
   env = {},
   snacks_win_opts = {},
@@ -166,14 +167,25 @@ end
 ---@return table|nil
 local function get_codex_command_and_env(cmd_args)
   local cmd_from_config = defaults.terminal_cmd
+  local shell = defaults.shell
   local cmd
+
   if type(cmd_from_config) == "table" then
-    cmd = vim.deepcopy(cmd_from_config)
-    if cmd_args and cmd_args ~= "" then
-      local extra_args = utils.parse_args(cmd_args)
-      for _, arg in ipairs(extra_args) do
-        table.insert(cmd, arg)
+    if shell and type(shell) == "table" and type(shell.cmd) == "string" and shell.cmd ~= "" then
+      local cmd_string = table.concat(cmd_from_config, " ")
+      if cmd_args and cmd_args ~= "" then
+        cmd_string = cmd_string .. " " .. cmd_args
       end
+      cmd = { shell.cmd }
+      if type(shell.args) == "table" then
+        for _, arg in ipairs(shell.args) do
+          table.insert(cmd, arg)
+        end
+      end
+      table.insert(cmd, cmd_string)
+    else
+      cmd = vim.deepcopy(cmd_from_config)
+      cmd = utils.append_cmd_args(cmd, cmd_args)
     end
   else
     local base_cmd
@@ -182,10 +194,22 @@ local function get_codex_command_and_env(cmd_args)
     else
       base_cmd = "codex"
     end
+    local cmd_string
     if cmd_args and cmd_args ~= "" then
-      cmd = base_cmd .. " " .. cmd_args
+      cmd_string = base_cmd .. " " .. cmd_args
     else
-      cmd = base_cmd
+      cmd_string = base_cmd
+    end
+    if shell and type(shell) == "table" and type(shell.cmd) == "string" and shell.cmd ~= "" then
+      cmd = { shell.cmd }
+      if type(shell.args) == "table" then
+        for _, arg in ipairs(shell.args) do
+          table.insert(cmd, arg)
+        end
+      end
+      table.insert(cmd, cmd_string)
+    else
+      cmd = cmd_string
     end
   end
 
@@ -193,6 +217,13 @@ local function get_codex_command_and_env(cmd_args)
   for key, value in pairs(defaults.env or {}) do
     if type(key) == "string" and value ~= nil then
       env_table[key] = tostring(value)
+    end
+  end
+  if shell and type(shell.env) == "table" then
+    for key, value in pairs(shell.env) do
+      if type(key) == "string" and value ~= nil then
+        env_table[key] = tostring(value)
+      end
     end
   end
   if vim.tbl_isempty(env_table) then
@@ -263,8 +294,15 @@ function M.setup(user_term_config, p_terminal_cmd, p_env)
     defaults.env = {}
   end
 
+  if user_term_config.Shell ~= nil and user_term_config.shell == nil then
+    user_term_config.shell = user_term_config.Shell
+    user_term_config.Shell = nil
+  end
+
   for k, v in pairs(user_term_config) do
     if k == "terminal_cmd" then
+    elseif k == "shell" and type(v) == "table" then
+      defaults.shell = v
     elseif defaults[k] ~= nil then
       if k == "split_side" and (v == "left" or v == "right") then
         defaults[k] = v
@@ -309,6 +347,12 @@ end
 function M.simple_toggle(opts_override, cmd_args)
   local effective_config = build_config(opts_override)
   local cmd, env_table = get_codex_command_and_env(cmd_args)
+
+  if cmd_args and cmd_args ~= "" then
+    get_provider().close()
+    get_provider().open(cmd, env_table, effective_config)
+    return
+  end
 
   get_provider().simple_toggle(cmd, env_table, effective_config)
 end

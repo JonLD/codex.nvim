@@ -2,6 +2,7 @@ local vim = vim
 local installer = require 'codex.installer'
 local state = require 'codex.state'
 local terminal = require 'codex.terminal'
+local term_utils = require 'codex.terminal.utils'
 
 local M = {}
 
@@ -10,13 +11,16 @@ local config = {
     toggle = nil,
     quit = '<C-q>', -- Default: Ctrl+q to quit
   },
-  border = 'single',
-  width = 0.8,
-  height = 0.8,
+  window = {
+    position = "float",
+    width = 0.8,
+    height = 0.8,
+    border = "single",
+  },
   cmd = 'codex',
+  shell = nil,
   model = nil, -- Default to the latest model
   autoinstall = true,
-  panel     = false,   -- if true, open Codex in a side-panel instead of floating window
   use_buffer = false,  -- if true, capture Codex stdout into a normal buffer instead of a terminal
   env = {},
   terminal = {
@@ -31,7 +35,11 @@ local config = {
 
 function M.setup(user_config)
   config = vim.tbl_deep_extend('force', config, user_config or {})
-  terminal.setup(config.terminal, config.cmd, config.env)
+  local term_config = vim.deepcopy(config.terminal or {})
+  if config.shell ~= nil then
+    term_config.shell = config.shell
+  end
+  terminal.setup(term_config, config.cmd, config.env)
 
   vim.api.nvim_create_user_command('Codex', function(opts)
     local cmd_args = opts.args and opts.args ~= '' and opts.args or nil
@@ -73,8 +81,8 @@ function M.setup(user_config)
 end
 
 local function open_window()
-  local width = math.floor(vim.o.columns * config.width)
-  local height = math.floor(vim.o.lines * config.height)
+  local width = math.floor(vim.o.columns * config.window.width)
+  local height = math.floor(vim.o.lines * config.window.height)
   local row = math.floor((vim.o.lines - height) / 2)
   local col = math.floor((vim.o.columns - width) / 2)
 
@@ -112,7 +120,7 @@ local function open_window()
     none = nil,
   }
 
-  local border = type(config.border) == 'string' and styles[config.border] or config.border
+  local border = type(config.window.border) == 'string' and styles[config.window.border] or config.window.border
 
   state.win = vim.api.nvim_open_win(state.buf, true, {
     relative = 'editor',
@@ -126,18 +134,19 @@ local function open_window()
 end
 
 --- Open Codex in a side-panel (vertical split) instead of floating window
-local function open_panel()
-  -- Create a vertical split on the right and show the buffer
-  vim.cmd('vertical rightbelow vsplit')
+local function open_panel(side)
+  local placement = side == "left" and "topleft" or "botright"
+  vim.cmd('vertical ' .. placement .. ' vsplit')
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, state.buf)
   -- Adjust width according to config (percentage of total columns)
-  local width = math.floor(vim.o.columns * config.width)
+  local width = math.floor(vim.o.columns * config.window.width)
   vim.api.nvim_win_set_width(win, width)
   state.win = win
 end
 
 function M.open(cmd_args)
+  local user_cmd_args = cmd_args
   local function create_clean_buf()
     local buf = vim.api.nvim_create_buf(false, false)
 
@@ -179,7 +188,11 @@ function M.open(cmd_args)
             'You can install manually with:',
             '  npm install -g @openai/codex',
           })
-          if config.panel then open_panel() else open_window() end
+          if config.window.position == "left" or config.window.position == "right" then
+            open_panel(config.window.position)
+          else
+            open_window()
+          end
         end
       end)
       return
@@ -196,7 +209,11 @@ function M.open(cmd_args)
         '',
         'Or enable autoinstall in setup: require("codex").setup{ autoinstall = true }',
       })
-      if config.panel then open_panel() else open_window() end
+      if config.window.position == "left" or config.window.position == "right" then
+        open_panel(config.window.position)
+      else
+        open_window()
+      end
       return
     end
   end
@@ -210,7 +227,11 @@ function M.open(cmd_args)
       state.buf = create_clean_buf()
     end
 
-    if config.panel then open_panel() else open_window() end
+    if config.window.position == "left" or config.window.position == "right" then
+      open_panel(config.window.position)
+    else
+      open_window()
+    end
   else
     terminal.open({}, cmd_args)
     return
@@ -218,18 +239,13 @@ function M.open(cmd_args)
 
   if not state.job then
     -- assemble command
-    local cmd_args = type(config.cmd) == 'string' and { config.cmd } or vim.deepcopy(config.cmd)
+    local cmd_args = type(config.cmd) == 'string' and term_utils.parse_args(config.cmd) or vim.deepcopy(config.cmd)
     if config.model then
       table.insert(cmd_args, '-m')
       table.insert(cmd_args, config.model)
     end
-    if cmd_args and cmd_args ~= '' then
-      local extra_args = vim.split(cmd_args, '%s+')
-      for _, arg in ipairs(extra_args) do
-        if arg ~= '' then
-          table.insert(cmd_args, arg)
-        end
-      end
+    if user_cmd_args and user_cmd_args ~= '' then
+      cmd_args = term_utils.append_cmd_args(cmd_args, user_cmd_args)
     end
 
     if config.use_buffer then
