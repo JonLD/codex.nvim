@@ -1,8 +1,6 @@
 # Codex Neovim Plugin
-<img width="1480" alt="image" src="https://github.com/user-attachments/assets/eac126c5-e71c-4de9-817a-bf4e8f2f6af9" />
 
-## A Neovim plugin integrating the open-sourced Codex CLI (`codex`)
-> Latest version: ![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/johnseth97/codex.nvim?sort=semver)
+## A Neovim plugin integrating Codex CLI
 
 ### Features:
 - Toggle Codex terminal with `:Codex`
