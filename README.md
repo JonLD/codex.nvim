@@ -5,8 +5,8 @@
 > Latest version: ![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/johnseth97/codex.nvim?sort=semver)
 
 ### Features:
-- Toggle Codex window or side-panel with `:Codex`
-- Background running when window hidden
+- Toggle Codex terminal with `:Codex`
+- Background running when terminal hidden
 - Statusline integration via `require("codex").status()`
 - Pass Codex CLI args via `:Codex {args}`
 - Reference files or selections with `:CodexReferenceFile`, `:CodexReferenceSelected`, and `:CodexSendSelected`
@@ -20,7 +20,6 @@ lazy.nvim:
 ```lua
 {
     "JonLD/codex.nvim",
-    lazy = true,
     cmd = {
         "Codex",
         "CodexReferenceFile",
@@ -28,68 +27,43 @@ lazy.nvim:
         "CodexSendSelected"
     },
     keys = {
-        -- Your keymaps here
-    },
-    opts = {
-        window     = {
-            position = "right", -- "float", "left", or "right"
-            border = "rounded", -- Options: "single", "double", or "rounded"
-            width = 0.35,       -- Float width (0.0 to 1.0) or vertical split width percentage.
-            height = 0.8,       -- Float height (0.0 to 1.0)
+        { "<leader>a", nil, desc = "AI" },
+        {
+            "<C-z>", -- Change to your preferred keybinding
+            "<cmd>Codex<CR>",
+            desc = "Toggle Codex terminal",
+            mode = { "n", "t" },
         },
-        terminal   = {
-            split_side = "right",
-            split_width_percentage = 0.30,
-            provider = "auto", -- "auto", "snacks", "native", or a custom provider table
-            show_native_term_exit_tip = true,
-            auto_close = false,
-            snacks_win_opts = {},
+        {
+            "<leader>ac",
+            "<cmd>Codex resume --last<CR>",
+            desc = "Codex continue (Resume last chat)",
         },
-        env = {}, -- Extra env vars for the Codex CLI
-        model       = nil,        -- Optional: pass a string to use a specific model (e.g., "o3-mini")
-        autoinstall = false,       -- Automatically install the Codex CLI if not found
+        {
+            "<leader>ar",
+            "<cmd>Codex resume<CR>",
+            desc = "Resume Codex",
+        },
+        {
+            "<leader>as",
+            "<cmd>CodexReferenceSelected!<CR>",
+            desc = "Send selection reference to Codex",
+            mode = { "n", "v" },
+        },
+        {
+            "<leader>at",
+            "<cmd>CodexSendSelected!<CR>",
+            desc = "Send selection with content to Codex",
+            mode = { "n", "v" },
+        },
+        {
+            "<leader>af",
+            "<cmd>CodexReferenceFile!<CR>",
+            desc = "Send file reference to Codex",
+            mode = { "n", "v" },
+        },
     },
-}
-```
-
-### Keymaps:
-```lua
-keys = {
-    { "<leader>a", nil, desc = "AI" },
-    {
-        "<C-z>", -- Change this to your preferred keybinding
-        "<cmd>Codex<CR>",
-        desc = "Toggle Codex popup or side-panel",
-        mode = { "n", "t" },
-    },
-    {
-        "<leader>ac",
-        "<cmd>Codex resume --last<CR>",
-        desc = "Codex continue (Resume last chat)",
-    },
-    {
-        "<leader>ar",
-        "<cmd>Codex resume<CR>",
-        desc = "Resume Codex",
-    },
-    {
-        "<leader>as",
-        "<cmd>CodexReferenceSelected!<CR>",
-        desc = "Send selection reference to Codex",
-        mode = { "n", "v" },
-    },
-    {
-        "<leader>at",
-        "<cmd>CodexSendSelected!<CR>",
-        desc = "Send selection with content to Codex",
-        mode = { "n", "v" },
-    },
-    {
-        "<leader>af",
-        "<cmd>CodexReferenceFile!<CR>",
-        desc = "Send file reference to Codex",
-        mode = { "n", "v" },
-    },
+    opts = {},
 }
 ```
 
@@ -97,8 +71,7 @@ keys = {
 - Call `:Codex` to open or close the Codex terminal.
 - Call `:Codex {args}` to pass arguments straight to the Codex CLI (for example `:Codex resume --last`).
 - Add keys in your plugin spec (recommended).
-- To choose floating popup vs side-panel, set `window.position = "float"` for a floating window or `"left"/"right"` for a split.
-- Add the following code to show backgrounded Codex window in lualine:
+- Add the following code to show backgrounded Codex terminal in lualine:
 
 ```lua
 require("codex").status() -- drop in to your lualine sections
@@ -106,7 +79,25 @@ require("codex").status() -- drop in to your lualine sections
 - Use `:CodexReferenceFile` to send `@file` for the current buffer.
 - Use `:CodexReferenceSelected` to send `@file:line-line` for the current selection (visual) or cursor line (normal).
 - Use `:CodexSendSelected` to send `@file:line-line` plus the selected text (visual) or cursor line text (normal).
-- Add `!` (bang) to `CodexReferenceFile`, `CodexReferenceSelected`, or `CodexSendSelected` to focus the Codex window after sending.
+- Add `!` (bang) to `CodexReferenceFile`, `CodexReferenceSelected`, or `CodexSendSelected` to focus the Codex terminal after sending.
+
+### Options:
+Defaults:
+```lua
+opts = {
+    terminal   = {
+        split_side = "right",
+        split_width_percentage = 0.30,
+        provider = "auto", -- "auto", "snacks", "native", or a custom provider table
+        show_native_term_exit_tip = true,
+        auto_close = true,
+        snacks_win_opts = {},
+    },
+    env = {}, -- Extra env vars for the Codex CLI
+    model       = nil,        -- Optional: pass a string to use a specific model (e.g., "o3-mini")
+    autoinstall = false,       -- Automatically install the Codex CLI if not found
+}
+```
 
 ### Configuration:
 - All plugin configurations can be seen in the `opts` table of the plugin setup, as shown in the installation section.

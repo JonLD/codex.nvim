@@ -6,12 +6,6 @@ local terminal = require 'codex.terminal'
 local M = {}
 
 local config = {
-  window = {
-    position = "float",
-    width = 0.8,
-    height = 0.8,
-    border = "single",
-  },
   cmd = 'codex',
   shell = nil,
   model = nil, -- Default to the latest model
@@ -20,9 +14,9 @@ local config = {
   terminal = {
     provider = "auto",
     split_side = "right",
-    split_width_percentage = 0.35,
+    split_width_percentage = 0.30,
     show_native_term_exit_tip = true,
-    auto_close = false,
+    auto_close = true,
     snacks_win_opts = {},
   },
 }
@@ -33,13 +27,12 @@ function M.setup(user_config)
   if config.shell ~= nil then
     term_config.shell = config.shell
   end
-  term_config.window = config.window
   terminal.setup(term_config, config.cmd, config.env)
 
   vim.api.nvim_create_user_command('Codex', function(opts)
     local cmd_args = opts.args and opts.args ~= '' and opts.args or nil
     M.toggle(cmd_args)
-  end, { desc = 'Toggle Codex popup', nargs = '*' })
+  end, { desc = 'Toggle Codex terminal', nargs = '*' })
 
   local function current_buffer_rel_path()
     local buf = vim.api.nvim_get_current_buf()
@@ -144,67 +137,13 @@ function M.setup(user_config)
 
 end
 
-local function open_window()
-  local width = math.floor(vim.o.columns * config.window.width)
-  local height = math.floor(vim.o.lines * config.window.height)
-  local row = math.floor((vim.o.lines - height) / 2)
-  local col = math.floor((vim.o.columns - width) / 2)
-
-  local styles = {
-    single = {
-      { '┌', 'FloatBorder' },
-      { '─', 'FloatBorder' },
-      { '┐', 'FloatBorder' },
-      { '│', 'FloatBorder' },
-      { '┘', 'FloatBorder' },
-      { '─', 'FloatBorder' },
-      { '└', 'FloatBorder' },
-      { '│', 'FloatBorder' },
-    },
-    double = {
-      { '╔', 'FloatBorder' },
-      { '═', 'FloatBorder' },
-      { '╗', 'FloatBorder' },
-      { '║', 'FloatBorder' },
-      { '╝', 'FloatBorder' },
-      { '═', 'FloatBorder' },
-      { '╚', 'FloatBorder' },
-      { '║', 'FloatBorder' },
-    },
-    rounded = {
-      { '╭', 'FloatBorder' },
-      { '─', 'FloatBorder' },
-      { '╮', 'FloatBorder' },
-      { '│', 'FloatBorder' },
-      { '╯', 'FloatBorder' },
-      { '─', 'FloatBorder' },
-      { '╰', 'FloatBorder' },
-      { '│', 'FloatBorder' },
-    },
-    none = nil,
-  }
-
-  local border = type(config.window.border) == 'string' and styles[config.window.border] or config.window.border
-
-  state.win = vim.api.nvim_open_win(state.buf, true, {
-    relative = 'editor',
-    width = width,
-    height = height,
-    row = row,
-    col = col,
-    style = 'minimal',
-    border = border,
-  })
-end
-
---- Open Codex in a side-panel (vertical split) instead of floating window
 local function open_panel(side)
   local placement = side == "left" and "topleft" or "botright"
   vim.cmd('vertical ' .. placement .. ' vsplit')
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, state.buf)
   -- Adjust width according to config (percentage of total columns)
-  local width = math.floor(vim.o.columns * config.window.width)
+  local width = math.floor(vim.o.columns * config.terminal.split_width_percentage)
   vim.api.nvim_win_set_width(win, width)
   state.win = win
 end
@@ -243,11 +182,7 @@ function M.open(cmd_args)
             'You can install manually with:',
             '  npm install -g @openai/codex',
           })
-          if config.window.position == "left" or config.window.position == "right" then
-            open_panel(config.window.position)
-          else
-            open_window()
-          end
+          open_panel(config.terminal.split_side)
         end
       end)
       return
@@ -264,11 +199,7 @@ function M.open(cmd_args)
         '',
         'Or enable autoinstall in setup: require("codex").setup{ autoinstall = true }',
       })
-      if config.window.position == "left" or config.window.position == "right" then
-        open_panel(config.window.position)
-      else
-        open_window()
-      end
+      open_panel(config.terminal.split_side)
       return
     end
   end

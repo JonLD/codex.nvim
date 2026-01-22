@@ -15,7 +15,6 @@ local defaults = {
   auto_close = true,
   env = {},
   snacks_win_opts = {},
-  window = nil,
 }
 
 M.defaults = defaults
@@ -137,9 +136,6 @@ local function build_config(opts_override)
       auto_close = function(val)
         return type(val) == "boolean"
       end,
-      window = function(val)
-        return type(val) == "table"
-      end,
     }
     for key, val in pairs(opts_override) do
       if effective_config[key] ~= nil and validators[key] and validators[key](val) then
@@ -148,18 +144,13 @@ local function build_config(opts_override)
     end
   end
 
-  local window = effective_config.window
   local split_width_percentage = effective_config.split_width_percentage
-  if window and window.position ~= "float" and type(window.width) == "number" and window.width > 0 and window.width < 1 then
-    split_width_percentage = window.width
-  end
 
   return {
     split_side = effective_config.split_side,
     split_width_percentage = split_width_percentage,
     auto_close = effective_config.auto_close,
     snacks_win_opts = effective_config.snacks_win_opts,
-    window = window,
   }
 end
 
@@ -315,8 +306,6 @@ function M.setup(user_term_config, p_terminal_cmd, p_env)
     if k == "terminal_cmd" then
     elseif k == "shell" and type(v) == "table" then
       defaults.shell = v
-    elseif k == "window" and type(v) == "table" then
-      defaults.window = v
     elseif defaults[k] ~= nil then
       if k == "split_side" and (v == "left" or v == "right") then
         defaults[k] = v
