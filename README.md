@@ -115,3 +115,7 @@ This `shell.env` table is merged into the Codex process environment, so you can 
 - You can set `cmd` to a string or table to override the Codex CLI command, and `env` to provide extra environment variables for the Codex process.
 
 - **For deeper customization, please refer to the [Codex CLI documentation](https://github.com/openai/codex?tab=readme-ov-file#full-configuration-example) full configuration example. These features change quickly as Codex CLI is in active beta development.*
+
+### Related Projects:
+- Originally built from: https://github.com/johnseth97/codex.nvim
+- Inspiration: https://github.com/coder/claudecode.nvim
