@@ -19,12 +19,12 @@ local config = {
   cmd = 'codex',
   shell = nil,
   model = nil, -- Default to the latest model
-  autoinstall = true,
+  autoinstall = false,
   env = {},
   terminal = {
     provider = "auto",
     split_side = "right",
-    split_width_percentage = 0.30,
+    split_width_percentage = 0.35,
     show_native_term_exit_tip = true,
     auto_close = false,
     snacks_win_opts = {},
@@ -45,34 +45,106 @@ function M.setup(user_config)
     M.toggle(cmd_args)
   end, { desc = 'Toggle Codex popup', nargs = '*' })
 
-  vim.api.nvim_create_user_command('CodexSendSelected', function(opts)
+  local function current_buffer_rel_path()
     local buf = vim.api.nvim_get_current_buf()
     local file_path = vim.api.nvim_buf_get_name(buf)
     if file_path == '' then
       vim.notify('[codex.nvim] No file path for current buffer.', vim.log.levels.WARN)
-      return
+      return nil
+    end
+    local rel_path = vim.fn.fnamemodify(file_path, ':.')
+    if rel_path == '' then
+      rel_path = file_path
+    end
+    return rel_path
+  end
+
+  local function resolve_range(opts)
+    if opts.range and opts.range ~= 0 then
+      return opts.line1, opts.line2
     end
 
-    local line1 = opts.line1
-    local line2 = opts.line2
-    if not opts.range or opts.range == 0 then
-      local cur = vim.api.nvim_win_get_cursor(0)[1]
-      line1 = cur
-      line2 = cur
+    local mode = vim.fn.mode()
+    if mode == 'v' or mode == 'V' or mode == '\22' then
+      local start_pos = vim.api.nvim_buf_get_mark(0, '<')
+      local end_pos = vim.api.nvim_buf_get_mark(0, '>')
+      local line1 = start_pos[1]
+      local line2 = end_pos[1]
+      if line1 > 0 and line2 > 0 then
+        return line1, line2
+      end
     end
+
+    local cur = vim.api.nvim_win_get_cursor(0)[1]
+    return cur, cur
+  end
+
+  local function should_focus(opts)
+    return opts.bang
+  end
+
+  vim.api.nvim_create_user_command('CodexReferenceFile', function(opts)
+    local rel_path = current_buffer_rel_path()
+    if not rel_path then
+      return
+    end
+    terminal.send_input(string.format('@%s', rel_path), { append_string = '' })
+    if should_focus(opts) then
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
+      terminal.focus()
+    end
+  end, { desc = 'Reference current file in Codex via @file', bang = true })
+
+  vim.api.nvim_create_user_command('CodexReferenceSelected', function(opts)
+    local rel_path = current_buffer_rel_path()
+    if not rel_path then
+      return
+    end
+    local line1, line2 = resolve_range(opts)
 
     if line1 > line2 then
       line1, line2 = line2, line1
     end
 
-    local rel_path = vim.fn.fnamemodify(file_path, ':.')
-    if rel_path == '' then
-      rel_path = file_path
+    local ref
+    if line1 == line2 then
+      ref = string.format('@%s:%d', rel_path, line1)
+    else
+      ref = string.format('@%s:%d-%d', rel_path, line1, line2)
+    end
+    terminal.send_input(ref, { append_string = ' ' })
+    if should_focus(opts) then
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
+      terminal.focus()
+    end
+  end, { desc = 'Reference selected lines in Codex via @file:line-line', range = true, bang = true })
+
+  vim.api.nvim_create_user_command('CodexSendSelected', function(opts)
+    local rel_path = current_buffer_rel_path()
+    if not rel_path then
+      return
     end
 
-    local ref = string.format('@%s:%d-%d', rel_path, line1, line2)
-    terminal.send_input(ref)
-  end, { desc = 'Send selected lines to Codex via @file:line-line', range = true })
+    local line1, line2 = resolve_range(opts)
+
+    if line1 > line2 then
+      line1, line2 = line2, line1
+    end
+
+    local ref
+    if line1 == line2 then
+      ref = string.format('@%s:%d', rel_path, line1)
+    else
+      ref = string.format('@%s:%d-%d', rel_path, line1, line2)
+    end
+    local lines = vim.api.nvim_buf_get_lines(0, line1 - 1, line2, false)
+    local text = table.concat(lines, '\n')
+    terminal.send_input('\n' .. ref .. '\n' .. text)
+    if should_focus(opts) then
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
+      terminal.focus()
+    end
+  end, { desc = 'Send selected lines with @file:line-line reference to Codex', range = true, bang = true })
 
   if config.keymaps.toggle then
     vim.api.nvim_set_keymap('n', config.keymaps.toggle, '<cmd>Codex<CR>', { noremap = true, silent = true })

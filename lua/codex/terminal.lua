@@ -382,6 +382,15 @@ end
 
 ---@param opts_override table|nil
 ---@param cmd_args string|nil
+function M.focus(opts_override, cmd_args)
+  local effective_config = build_config(opts_override)
+  local cmd, env_table = get_codex_command_and_env(cmd_args)
+
+  get_provider().open(cmd, env_table, effective_config, true)
+end
+
+---@param opts_override table|nil
+---@param cmd_args string|nil
 function M.toggle_open_no_focus(opts_override, cmd_args)
   ensure_terminal_visible_no_focus(opts_override, cmd_args)
 end
@@ -404,11 +413,15 @@ function M.get_active_terminal_bufnr()
 end
 
 ---@param text string
----@param opts? {retries?: number, delay_ms?: number}
+---@param opts? {retries?: number, delay_ms?: number, append_string?: string}
 ---@return boolean
 function M.send_input(text, opts)
   local retries = (opts and opts.retries) or 15
   local delay_ms = (opts and opts.delay_ms) or 30
+  local append_string = opts and opts.append_string
+  if append_string == nil then
+    append_string = "\n"
+  end
   local provider = get_provider()
   local bufnr = provider.get_active_bufnr()
 
@@ -419,7 +432,7 @@ function M.send_input(text, opts)
 
   local job_id = get_terminal_job_id(bufnr)
   if job_id then
-    vim.api.nvim_chan_send(job_id, text .. "\n")
+    vim.api.nvim_chan_send(job_id, text .. append_string)
     return true
   end
 
