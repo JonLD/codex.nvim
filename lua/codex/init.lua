@@ -6,10 +6,6 @@ local terminal = require 'codex.terminal'
 local M = {}
 
 local config = {
-  keymaps = {
-    toggle = nil,
-    quit = '<C-q>', -- Default: Ctrl+q to quit
-  },
   window = {
     position = "float",
     width = 0.8,
@@ -146,9 +142,6 @@ function M.setup(user_config)
     end
   end, { desc = 'Send selected lines with @file:line-line reference to Codex', range = true, bang = true })
 
-  if config.keymaps.toggle then
-    vim.api.nvim_set_keymap('n', config.keymaps.toggle, '<cmd>Codex<CR>', { noremap = true, silent = true })
-  end
 end
 
 local function open_window()
@@ -223,14 +216,6 @@ function M.open(cmd_args)
     vim.api.nvim_buf_set_option(buf, 'bufhidden', 'hide')
     vim.api.nvim_buf_set_option(buf, 'swapfile', false)
     vim.api.nvim_buf_set_option(buf, 'filetype', 'codex')
-
-    -- Apply configured quit keybinding
-
-    if config.keymaps.quit then
-      local quit_cmd = [[<cmd>lua require('codex').close()<CR>]]
-      vim.api.nvim_buf_set_keymap(buf, 't', config.keymaps.quit, [[<C-\><C-n>]] .. quit_cmd, { noremap = true, silent = true })
-      vim.api.nvim_buf_set_keymap(buf, 'n', config.keymaps.quit, quit_cmd, { noremap = true, silent = true })
-    end
 
     return buf
   end

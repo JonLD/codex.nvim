@@ -6,7 +6,6 @@
 
 ### Features:
 - Toggle Codex window or side-panel with `:Codex`
-- Optional keymap mapping via `setup` call
 - Background running when window hidden
 - Statusline integration via `require("codex").status()`
 - Pass Codex CLI args via `:Codex {args}`
@@ -29,43 +28,9 @@ lazy.nvim:
         "CodexSendSelected"
     },
     keys = {
-        { "<leader>a", nil, desc = "AI" },
-        {
-            "<C-z>", -- Change this to your preferred keybinding
-            "Codex",
-            desc = "Toggle Codex popup or side-panel",
-            mode = { "n", "t" }
-        },
-        {
-            "<leader>ac",
-            "<cmd>Codex resume --last<CR>",
-            desc = "Codex continue (Resume last chat)",
-        },
-        { "<leader>ar", "<cmd>Codex resume<CR>", desc = "Resume Codex", },
-        {
-            "<leader>as",
-            "<CMD>CodexReferenceSelected!<CR>",
-            desc = "Send to Codex"
-            mode = { "n", "v" },
-        },
-        {
-            "<leader>at",
-            "<CMD>CodexSendSelected!<CR>",
-            desc = "Send to Codex"
-            mode = { "n", "v" },
-        },
-        {
-            "<leader>af",
-            "<CMD>CodexReferenceFile!<CR>",
-            desc = "Send to Codex"
-            mode = { "n", "v" },
-        },
+        -- Your keymaps here
     },
     opts = {
-        keymaps     = {
-            toggle = nil, -- Keybind to toggle Codex window (Disabled by default, watch out for conflicts)
-            quit = "<C-q>", -- Keybind to close the Codex window (default: Ctrl + q)
-        },         -- Disable internal default keymap
         window     = {
             position = "right", -- "float", "left", or "right"
             border = "rounded", -- Options: "single", "double", or "rounded"
@@ -83,6 +48,47 @@ lazy.nvim:
         env = {}, -- Extra env vars for the Codex CLI
         model       = nil,        -- Optional: pass a string to use a specific model (e.g., "o3-mini")
         autoinstall = false,       -- Automatically install the Codex CLI if not found
+    },
+}
+```
+
+### Keymaps:
+```lua
+keys = {
+    { "<leader>a", nil, desc = "AI" },
+    {
+        "<C-z>", -- Change this to your preferred keybinding
+        "<cmd>Codex<CR>",
+        desc = "Toggle Codex popup or side-panel",
+        mode = { "n", "t" },
+    },
+    {
+        "<leader>ac",
+        "<cmd>Codex resume --last<CR>",
+        desc = "Codex continue (Resume last chat)",
+    },
+    {
+        "<leader>ar",
+        "<cmd>Codex resume<CR>",
+        desc = "Resume Codex",
+    },
+    {
+        "<leader>as",
+        "<cmd>CodexReferenceSelected!<CR>",
+        desc = "Send selection reference to Codex",
+        mode = { "n", "v" },
+    },
+    {
+        "<leader>at",
+        "<cmd>CodexSendSelected!<CR>",
+        desc = "Send selection with content to Codex",
+        mode = { "n", "v" },
+    },
+    {
+        "<leader>af",
+        "<cmd>CodexReferenceFile!<CR>",
+        desc = "Send file reference to Codex",
+        mode = { "n", "v" },
     },
 }
 ```
