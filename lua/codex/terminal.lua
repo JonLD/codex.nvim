@@ -165,6 +165,31 @@ local function is_terminal_visible(bufnr)
   return bufinfo and #bufinfo > 0 and #bufinfo[1].windows > 0
 end
 
+local last_sse_port = nil
+local has_launched = false
+
+---@param provider table
+---@param current_port number|nil
+local function restart_terminal_if_port_changed(provider, current_port)
+  if not current_port then
+    return
+  end
+
+  if has_launched and last_sse_port and last_sse_port ~= current_port then
+    if provider and type(provider.close) == "function" then
+      provider.close()
+    end
+  end
+end
+
+local function get_current_sse_port()
+  local ok, server_module = pcall(require, "codex.server.init")
+  if not ok or not server_module or type(server_module.state) ~= "table" then
+    return nil
+  end
+  return server_module.state.port
+end
+
 ---@param cmd_args string|nil
 ---@return string|table
 ---@return table|nil
@@ -216,7 +241,49 @@ local function get_codex_command_and_env(cmd_args)
     end
   end
 
-  local env_table = {}
+  local function derive_codex_config_dir(lock_dir)
+    if type(lock_dir) ~= "string" or lock_dir == "" then
+      return nil
+    end
+
+    local normalized = lock_dir:gsub("/+$", "")
+    if normalized:sub(-4) == "/ide" then
+      local base = normalized:sub(1, -5)
+      if base ~= "" then
+        return base
+      end
+      return nil
+    end
+
+    return normalized
+  end
+
+  local sse_port_value = get_current_sse_port()
+  local env_table = {
+    ENABLE_IDE_INTEGRATION = "true",
+    FORCE_CODE_TERMINAL = "true",
+  }
+
+  if sse_port_value then
+    env_table["CODEX_CODE_SSE_PORT"] = tostring(sse_port_value)
+  end
+
+  local lockfile_ok, lockfile = pcall(require, "codex.lockfile")
+  if lockfile_ok and lockfile and type(lockfile.lock_dir) == "string" then
+    local config_dir = derive_codex_config_dir(lockfile.lock_dir)
+    if config_dir then
+      env_table["CODEX_CONFIG_DIR"] = config_dir
+    end
+  end
+
+  if lockfile_ok and lockfile and sse_port_value then
+    local auth_ok, auth_token = lockfile.get_auth_token(sse_port_value)
+    if auth_ok and type(auth_token) == "string" and auth_token ~= "" then
+      env_table["CODEX_CODE_IDE_AUTHORIZATION"] = auth_token
+      env_table["CODEX_CODE_IDE_AUTH_TOKEN"] = auth_token
+      env_table["CODEX_CODE_AUTH_TOKEN"] = auth_token
+    end
+  end
   for key, value in pairs(defaults.env or {}) do
     if type(key) == "string" and value ~= nil then
       env_table[key] = tostring(value)
@@ -254,9 +321,16 @@ end
 ---@return boolean
 local function ensure_terminal_visible_no_focus(opts_override, cmd_args)
   local provider = get_provider()
+  local current_port = get_current_sse_port()
+
+  restart_terminal_if_port_changed(provider, current_port)
 
   if provider.ensure_visible then
     provider.ensure_visible()
+    if current_port then
+      last_sse_port = current_port
+      has_launched = true
+    end
     return true
   end
 
@@ -269,6 +343,10 @@ local function ensure_terminal_visible_no_focus(opts_override, cmd_args)
   local cmd, env_table = get_codex_command_and_env(cmd_args)
 
   provider.open(cmd, env_table, effective_config, false)
+  if current_port then
+    last_sse_port = current_port
+    has_launched = true
+  end
   return true
 end
 
@@ -335,10 +413,17 @@ end
 ---@param opts_override table|nil
 ---@param cmd_args string|nil
 function M.open(opts_override, cmd_args)
+  local provider = get_provider()
+  local current_port = get_current_sse_port()
   local effective_config = build_config(opts_override)
   local cmd, env_table = get_codex_command_and_env(cmd_args)
 
-  get_provider().open(cmd, env_table, effective_config)
+  restart_terminal_if_port_changed(provider, current_port)
+  provider.open(cmd, env_table, effective_config)
+  if current_port then
+    last_sse_port = current_port
+    has_launched = true
+  end
 end
 
 function M.close()
@@ -348,25 +433,44 @@ end
 ---@param opts_override table|nil
 ---@param cmd_args string|nil
 function M.simple_toggle(opts_override, cmd_args)
+  local provider = get_provider()
+  local current_port = get_current_sse_port()
   local effective_config = build_config(opts_override)
   local cmd, env_table = get_codex_command_and_env(cmd_args)
 
+  restart_terminal_if_port_changed(provider, current_port)
+
   if cmd_args and cmd_args ~= "" then
-    get_provider().close()
-    get_provider().open(cmd, env_table, effective_config)
+    provider.close()
+    provider.open(cmd, env_table, effective_config)
+    if current_port then
+      last_sse_port = current_port
+      has_launched = true
+    end
     return
   end
 
-  get_provider().simple_toggle(cmd, env_table, effective_config)
+  provider.simple_toggle(cmd, env_table, effective_config)
+  if current_port then
+    last_sse_port = current_port
+    has_launched = true
+  end
 end
 
 ---@param opts_override table|nil
 ---@param cmd_args string|nil
 function M.focus_toggle(opts_override, cmd_args)
+  local provider = get_provider()
+  local current_port = get_current_sse_port()
   local effective_config = build_config(opts_override)
   local cmd, env_table = get_codex_command_and_env(cmd_args)
 
-  get_provider().focus_toggle(cmd, env_table, effective_config)
+  restart_terminal_if_port_changed(provider, current_port)
+  provider.focus_toggle(cmd, env_table, effective_config)
+  if current_port then
+    last_sse_port = current_port
+    has_launched = true
+  end
 end
 
 ---@param opts_override table|nil
@@ -434,6 +538,15 @@ function M.send_input(text, opts)
     M.send_input(text, { retries = retries - 1, delay_ms = delay_ms })
   end, delay_ms)
   return true
+end
+
+---@param text string
+---@param opts? {submit?: boolean}
+---@return boolean
+function M.send(text, opts)
+  local submit = opts == nil or opts.submit ~= false
+  local append_string = submit and "\n" or ""
+  return M.send_input(text, { append_string = append_string })
 end
 
 ---@return table|nil

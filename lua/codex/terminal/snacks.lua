@@ -5,6 +5,7 @@ local M = {}
 
 local snacks_available, Snacks = pcall(require, "snacks")
 local utils = require("codex.terminal.utils")
+local terminal_buffer = require("codex.terminal.buffer")
 local terminal = nil
 
 ---@return boolean
@@ -125,6 +126,9 @@ function M.open(cmd, env_table, config, focus)
   if term_instance and term_instance:buf_valid() then
     setup_terminal_events(term_instance, config)
     terminal = term_instance
+    if term_instance.buf then
+      terminal_buffer.mark_terminal_buffer(term_instance.buf, config)
+    end
   else
     terminal = nil
     local error_details = {}

@@ -1,3 +1,4 @@
 luacov.report.out
 luacov.stats.out
 .serena
+codex_nvim_mcp.egg-info

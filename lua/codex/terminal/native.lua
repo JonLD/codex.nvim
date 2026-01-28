@@ -4,6 +4,7 @@
 local M = {}
 
 local utils = require("codex.terminal.utils")
+local terminal_buffer = require("codex.terminal.buffer")
 
 local bufnr = nil
 local winid = nil
@@ -120,6 +121,7 @@ local function open_terminal(cmd, env_table, effective_config, focus)
   winid = new_winid
   bufnr = vim.api.nvim_get_current_buf()
   vim.bo[bufnr].bufhidden = "hide"
+  terminal_buffer.mark_terminal_buffer(bufnr, effective_config)
 
   if effective_config.auto_close then
     vim.api.nvim_create_autocmd("TermClose", {

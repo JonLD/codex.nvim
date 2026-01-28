@@ -9,6 +9,7 @@
 - Pass Codex CLI args via `:Codex {args}`
 - Reference files or selections with `:CodexReferenceFile`, `:CodexReferenceSelected`, and `:CodexSendSelected`
 - Snacks.nvim provider support with native terminal fallback
+- IDE integration server for Codex CLI (MCP tools, diffs, selection)
 
 ### Installation:
 
@@ -69,6 +70,7 @@ lazy.nvim:
 - Call `:Codex` to open or close the Codex terminal.
 - Call `:Codex {args}` to pass arguments straight to the Codex CLI (for example `:Codex resume --last`).
 - Add keys in your plugin spec (recommended).
+- Use `:CodexStart`, `:CodexStop`, and `:CodexStatus` to control IDE integration.
 - Add the following code to show backgrounded Codex terminal in lualine:
 
 ```lua
@@ -79,10 +81,40 @@ require("codex").status() -- drop in to your lualine sections
 - Use `:CodexSendSelected` to send `@file:line-line` plus the selected text (visual) or cursor line text (normal).
 - Add `!` (bang) to `CodexReferenceFile`, `CodexReferenceSelected`, or `CodexSendSelected` to focus the Codex terminal after sending.
 
+### MCP Server (Codex CLI)
+This plugin ships a Python MCP server that bridges Codex CLI to Neovim over RPC.
+It binds to the most recent Neovim instance that ran `:Codex` or `:CodexStart`.
+It records instances in `~/.codex/nvim_instances.json`.
+
+Prerequisites:
+```bash
+uv sync
+```
+
+Register with Codex:
+```bash
+codex mcp add codex-nvim --command uv --args "run" "--python" "3.10" "--" "python" "C:\path\to\codex.nvim\mcp\codex_nvim_server.py"
+```
+
+If you launch Codex from a different working directory, set the MCP server cwd
+to the plugin root in `~/.codex/config.toml` so `uv` can find `pyproject.toml`:
+
+```toml
+[mcp_servers.codex-nvim]
+command = "uv"
+args = ["run", "--python", "3.10", "--", "python", "C:\\path\\to\\codex.nvim\\mcp\\codex_nvim_server.py"]
+cwd = "C:\\path\\to\\codex.nvim"
+```
+
 ### Options:
 Defaults:
 ```lua
 opts = {
+    auto_start = true,
+    port_range = { min = 10000, max = 65535 },
+    auth_mode = "optional", -- "required", "optional", or "disabled"
+    log_level = "info",
+    track_selection = true,
     terminal   = {
         split_side = "right",
         split_width_percentage = 0.30,

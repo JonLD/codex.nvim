@@ -1,33 +1,53 @@
 local vim = vim
+local config_module = require 'codex.config'
 local installer = require 'codex.installer'
+local logger = require 'codex.logger'
+local registry = require 'codex.registry'
 local state = require 'codex.state'
 local terminal = require 'codex.terminal'
 
 local M = {}
 
-local config = {
-  cmd = 'codex',
-  shell = nil,
-  model = nil, -- Default to the latest model
-  autoinstall = false,
-  env = {},
-  terminal = {
-    provider = "auto",
-    split_side = "right",
-    split_width_percentage = 0.30,
-    show_native_term_exit_tip = true,
-    auto_close = true,
-    snacks_win_opts = {},
-  },
+M.version = {
+  major = 0,
+  minor = 1,
+  patch = 0,
+  prerelease = nil,
+  string = function(self)
+    local version = string.format("%d.%d.%d", self.major, self.minor, self.patch)
+    if self.prerelease then
+      version = version .. "-" .. self.prerelease
+    end
+    return version
+  end,
+}
+
+M.state = {
+  config = config_module.defaults,
+  server = nil,
+  port = nil,
+  auth_token = nil,
+  initialized = false,
 }
 
 function M.setup(user_config)
-  config = vim.tbl_deep_extend('force', config, user_config or {})
+  local config = config_module.apply(user_config or {})
+  M.state.config = config
+
+  logger.setup(config)
+
   local term_config = vim.deepcopy(config.terminal or {})
   if config.shell ~= nil then
     term_config.shell = config.shell
   end
   terminal.setup(term_config, config.cmd, config.env)
+
+  local diff = require("codex.diff")
+  diff.setup(config)
+
+  if config.auto_start then
+    M.start(false)
+  end
 
   vim.api.nvim_create_user_command('Codex', function(opts)
     local cmd_args = opts.args and opts.args ~= '' and opts.args or nil
@@ -135,6 +155,40 @@ function M.setup(user_config)
     end
   end, { desc = 'Send selected lines with @file:line-line reference to Codex', range = true, bang = true })
 
+  vim.api.nvim_create_user_command("CodexStart", function()
+    M.start()
+  end, { desc = "Start Codex IDE integration" })
+
+  vim.api.nvim_create_user_command("CodexStop", function()
+    M.stop()
+  end, { desc = "Stop Codex IDE integration" })
+
+  vim.api.nvim_create_user_command("CodexStatus", function()
+    if M.state.server and M.state.port then
+      logger.info("command", "Codex IDE integration is running on port " .. tostring(M.state.port))
+    else
+      logger.info("command", "Codex IDE integration is not running")
+    end
+  end, { desc = "Show Codex IDE integration status" })
+
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = vim.api.nvim_create_augroup("CodexShutdown", { clear = true }),
+    callback = function()
+      if M.state.server then
+        M.stop()
+      end
+    end,
+    desc = "Stop Codex IDE integration when exiting Neovim",
+  })
+
+  M.state.initialized = true
+end
+
+local function touch_registry()
+  local ok = registry.touch()
+  if not ok then
+    logger.warn("registry", "Failed to update Neovim instance registry")
+  end
 end
 
 local function open_panel(side)
@@ -143,12 +197,13 @@ local function open_panel(side)
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, state.buf)
   -- Adjust width according to config (percentage of total columns)
-  local width = math.floor(vim.o.columns * config.terminal.split_width_percentage)
+  local width = math.floor(vim.o.columns * M.state.config.terminal.split_width_percentage)
   vim.api.nvim_win_set_width(win, width)
   state.win = win
 end
 
 function M.open(cmd_args)
+  touch_registry()
   local function create_clean_buf()
     local buf = vim.api.nvim_create_buf(false, false)
 
@@ -164,6 +219,7 @@ function M.open(cmd_args)
     return
   end
 
+  local config = M.state.config
   local check_cmd = type(config.cmd) == 'string' and not config.cmd:find '%s' and config.cmd or (type(config.cmd) == 'table' and config.cmd[1]) or nil
 
   if check_cmd and vim.fn.executable(check_cmd) == 0 then
@@ -221,7 +277,170 @@ function M.toggle(cmd_args)
     M.close()
     return
   end
+  touch_registry()
   terminal.simple_toggle({}, cmd_args)
+end
+
+function M._format_path_for_at_mention(file_path)
+  if not file_path or type(file_path) ~= "string" or file_path == "" then
+    error("format_path_for_at_mention: file_path must be a non-empty string")
+  end
+
+  if not package.loaded["busted"] then
+    if vim.fn.filereadable(file_path) == 0 and vim.fn.isdirectory(file_path) == 0 then
+      error("format_path_for_at_mention: path does not exist: " .. file_path)
+    end
+  end
+
+  local is_directory = vim.fn.isdirectory(file_path) == 1
+  local formatted_path = file_path
+  local cwd = vim.fn.getcwd()
+
+  if string.find(file_path, cwd, 1, true) == 1 then
+    local relative_path = string.sub(file_path, #cwd + 2)
+    if relative_path ~= "" then
+      formatted_path = relative_path
+    else
+      formatted_path = is_directory and "./" or file_path
+    end
+  end
+
+  if is_directory and not string.match(formatted_path, "/$") then
+    formatted_path = formatted_path .. "/"
+  end
+
+  return formatted_path, is_directory
+end
+
+function M.send_at_mention(file_path, start_line, end_line, context)
+  context = context or "command"
+  if not M.state.server then
+    logger.error(context, "Codex IDE integration is not running")
+    return false, "Codex IDE integration is not running"
+  end
+
+  local formatted_path, is_directory
+  local format_ok, format_result, is_dir_result = pcall(M._format_path_for_at_mention, file_path)
+  if not format_ok then
+    return false, format_result
+  end
+  formatted_path, is_directory = format_result, is_dir_result
+
+  if is_directory and (start_line or end_line) then
+    start_line = nil
+    end_line = nil
+  end
+
+  local params = {
+    filePath = formatted_path,
+    lineStart = start_line,
+    lineEnd = end_line,
+  }
+
+  local broadcast_success = M.state.server.broadcast("at_mentioned", params)
+  if not broadcast_success then
+    local error_msg = "Failed to broadcast at_mention for " .. formatted_path
+    logger.error(context, error_msg)
+    return false, error_msg
+  end
+
+  return true, nil
+end
+
+function M.is_codex_connected()
+  if not M.state.server then
+    return false
+  end
+
+  local server_module = require("codex.server.init")
+  local status = server_module.get_status()
+  return status.running and status.client_count and status.client_count > 0
+end
+
+function M.start(show_startup_notification)
+  if show_startup_notification == nil then
+    show_startup_notification = true
+  end
+  if M.state.server then
+    logger.warn("init", "Codex IDE integration is already running on port " .. tostring(M.state.port))
+    return false, "Already running"
+  end
+
+  touch_registry()
+  local server = require("codex.server.init")
+  local lockfile = require("codex.lockfile")
+
+  local auth_success, auth_token = pcall(lockfile.generate_auth_token)
+  if not auth_success then
+    local error_msg = "Failed to generate authentication token: " .. tostring(auth_token)
+    logger.error("init", error_msg)
+    return false, error_msg
+  end
+
+  local success, result = server.start(M.state.config, auth_token)
+  if not success then
+    local error_msg = "Failed to start Codex server: " .. tostring(result)
+    logger.error("init", error_msg)
+    return false, error_msg
+  end
+
+  M.state.server = server
+  M.state.port = tonumber(result)
+  M.state.auth_token = auth_token
+
+  local lock_success, lock_result = lockfile.create(M.state.port, auth_token)
+  if not lock_success then
+    server.stop()
+    M.state.server = nil
+    M.state.port = nil
+    M.state.auth_token = nil
+
+    local error_msg = "Failed to create lock file: " .. tostring(lock_result)
+    logger.error("init", error_msg)
+    return false, error_msg
+  end
+
+  if M.state.config.track_selection then
+    local selection = require("codex.selection")
+    selection.enable(M.state.server, M.state.config.visual_demotion_delay_ms)
+  end
+
+  if show_startup_notification then
+    logger.info("init", "Codex IDE integration started on port " .. tostring(M.state.port))
+  end
+
+  return true, M.state.port
+end
+
+function M.stop()
+  if not M.state.server then
+    logger.warn("init", "Codex IDE integration is not running")
+    return false, "Not running"
+  end
+
+  local lockfile = require("codex.lockfile")
+  local lock_success, lock_error = lockfile.remove(M.state.port)
+  if not lock_success then
+    logger.warn("init", "Failed to remove lock file: " .. tostring(lock_error))
+  end
+
+  if M.state.config.track_selection then
+    local selection = require("codex.selection")
+    selection.disable()
+  end
+
+  local success, error_msg = M.state.server.stop()
+  if not success then
+    logger.error("init", "Failed to stop Codex integration: " .. tostring(error_msg))
+    return false, error_msg
+  end
+
+  M.state.server = nil
+  M.state.port = nil
+  M.state.auth_token = nil
+
+  logger.info("init", "Codex IDE integration stopped")
+  return true
 end
 
 function M.statusline()
